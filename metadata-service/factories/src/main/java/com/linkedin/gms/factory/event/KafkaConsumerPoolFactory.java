@@ -1,7 +1,10 @@
 package com.linkedin.gms.factory.event;
 
+import com.linkedin.metadata.utils.metrics.MetricUtils;
 import io.datahubproject.event.kafka.KafkaConsumerPool;
+import java.time.Duration;
 import org.apache.avro.generic.GenericRecord;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -18,10 +21,21 @@ public class KafkaConsumerPoolFactory {
   @Value("${kafka.consumerPool.maxSize:10}")
   private int maxPoolSize;
 
+  @Value("${kafka.consumerPool.validationTimeoutSeconds}")
+  private int validationTimeoutSeconds;
+
+  @Autowired(required = false)
+  private MetricUtils metricUtils;
+
   @Bean
   public KafkaConsumerPool kafkaConsumerPool(
       @Qualifier("kafkaConsumerPoolConsumerFactory")
           DefaultKafkaConsumerFactory<String, GenericRecord> consumerFactory) {
-    return new KafkaConsumerPool(consumerFactory, initialPoolSize, maxPoolSize);
+    return new KafkaConsumerPool(
+        consumerFactory,
+        initialPoolSize,
+        maxPoolSize,
+        Duration.ofSeconds(validationTimeoutSeconds),
+        metricUtils);
   }
 }

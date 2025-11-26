@@ -90,7 +90,7 @@ public class ExternalEventsService {
     long timeout =
         (pollTimeoutSeconds != null ? pollTimeoutSeconds : defaultPollTimeoutSeconds) * 1000L;
     KafkaConsumer<String, GenericRecord> consumer =
-        consumerPool.borrowConsumer(timeout, TimeUnit.MILLISECONDS);
+        consumerPool.borrowConsumer(timeout, TimeUnit.MILLISECONDS, finalTopic);
     if (consumer == null) {
       throw new TimeLimitExceededException("Too many simultaneous requests, retry again later.");
     }

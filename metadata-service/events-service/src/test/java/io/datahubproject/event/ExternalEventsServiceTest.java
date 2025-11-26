@@ -36,7 +36,8 @@ public class ExternalEventsServiceTest {
   @BeforeMethod
   public void setUp() throws Exception {
     MockitoAnnotations.initMocks(this);
-    when(consumerPool.borrowConsumer(anyLong(), any(TimeUnit.class))).thenReturn(kafkaConsumer);
+    when(consumerPool.borrowConsumer(anyLong(), any(TimeUnit.class), anyString()))
+        .thenReturn(kafkaConsumer);
     topicNames.put(ExternalEventsService.PLATFORM_EVENT_TOPIC_NAME, "CustomerSpecificTopicName");
     topicNames.put(
         ExternalEventsService.METADATA_CHANGE_LOG_VERSIONED_TOPIC_NAME,

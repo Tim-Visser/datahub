@@ -200,12 +200,12 @@ def test_poll_events_http_error(mock_graph: DataHubGraph) -> None:
     with patch(
         "requests.get", side_effect=HTTPError(response=dummy_response)
     ) as mock_get:
-        # The default Tenacity stop_after_attempt=3
+        # The default Tenacity stop_after_attempt=15
         with pytest.raises(HTTPError):
             consumer.poll_events(topic="TestTopic")
 
         # requests.get should be called multiple times due to retry
-        assert mock_get.call_count == 3
+        assert mock_get.call_count == 15
 
 
 def test_poll_events_connection_error(mock_graph: DataHubGraph) -> None:
@@ -225,7 +225,7 @@ def test_poll_events_connection_error(mock_graph: DataHubGraph) -> None:
             consumer.poll_events(topic="TestTopic")
 
         # requests.get should be called multiple times due to retry
-        assert mock_get.call_count == 3
+        assert mock_get.call_count == 15
 
 
 def test_poll_events_chunked_encoding_error(mock_graph: DataHubGraph) -> None:
@@ -245,7 +245,7 @@ def test_poll_events_chunked_encoding_error(mock_graph: DataHubGraph) -> None:
             consumer.poll_events(topic="TestTopic")
 
         # requests.get should be called multiple times due to retry
-        assert mock_get.call_count == 3
+        assert mock_get.call_count == 15
 
 
 def test_poll_events_timeout(mock_graph: DataHubGraph) -> None:
@@ -263,7 +263,7 @@ def test_poll_events_timeout(mock_graph: DataHubGraph) -> None:
             consumer.poll_events(topic="TestTopic")
 
         # requests.get should be called multiple times due to retry
-        assert mock_get.call_count == 3
+        assert mock_get.call_count == 15
 
 
 def test_get_events(
@@ -324,3 +324,143 @@ def test_commit_offsets_no_store(mock_graph: DataHubGraph) -> None:
     # No error should occur, and no calls to the store.
     # We just assert that the code doesn't raise an exception.
     # (No additional assert needed here.)
+
+
+def test_poll_events_infinite_retry_retries_more_than_default(
+    mock_graph: DataHubGraph,
+) -> None:
+    """
+    Test that when infinite_retry=True, poll_events retries more than the default 15 times.
+    """
+    consumer = DataHubEventsConsumer(
+        graph=mock_graph,
+        consumer_id="test-consumer",
+        offset_id="initial-offset",
+        infinite_retry=True,
+    )
+
+    dummy_response = Response()
+    # Fail 5 times, then succeed on the 6th attempt
+    call_count = 0
+
+    def side_effect(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count < 6:
+            raise HTTPError(response=dummy_response)
+        # Return a successful response on the 6th attempt
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "offsetId": "success-offset",
+            "count": 0,
+            "events": [],
+        }
+        mock_response.raise_for_status.return_value = None
+        return mock_response
+
+    with patch("requests.get", side_effect=side_effect) as mock_get:
+        result = consumer.poll_events(topic="TestTopic")
+
+        # Should have been called 6 times (5 failures + 1 success)
+        assert mock_get.call_count == 6
+        assert result.offsetId == "success-offset"
+
+
+def test_poll_events_infinite_retry_false_uses_default_retries(
+    mock_graph: DataHubGraph,
+) -> None:
+    """
+    Test that when infinite_retry=False (default), poll_events only retries 15 times.
+    """
+    consumer = DataHubEventsConsumer(
+        graph=mock_graph,
+        consumer_id="test-consumer",
+        offset_id="initial-offset",
+        infinite_retry=False,
+    )
+
+    dummy_response = Response()
+    with patch(
+        "requests.get", side_effect=HTTPError(response=dummy_response)
+    ) as mock_get:
+        with pytest.raises(HTTPError):
+            consumer.poll_events(topic="TestTopic")
+
+        # Should only retry 15 times (default behavior)
+        assert mock_get.call_count == 15
+
+
+def test_poll_events_infinite_retry_connection_error(
+    mock_graph: DataHubGraph,
+) -> None:
+    """
+    Test that infinite_retry works with ConnectionError and retries more than default (15).
+    """
+    consumer = DataHubEventsConsumer(
+        graph=mock_graph,
+        consumer_id="test-consumer",
+        offset_id="initial-offset",
+        infinite_retry=True,
+    )
+
+    # Fail 4 times, then succeed
+    call_count = 0
+
+    def side_effect(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count < 5:
+            raise ConnectionError("Connection Error")
+        # Return a successful response on the 5th attempt
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "offsetId": "success-offset",
+            "count": 0,
+            "events": [],
+        }
+        mock_response.raise_for_status.return_value = None
+        return mock_response
+
+    with patch("requests.get", side_effect=side_effect) as mock_get:
+        result = consumer.poll_events(topic="TestTopic")
+
+        # Should have been called 5 times (4 failures + 1 success)
+        assert mock_get.call_count == 5
+        assert result.offsetId == "success-offset"
+
+
+def test_poll_events_infinite_retry_timeout(mock_graph: DataHubGraph) -> None:
+    """
+    Test that infinite_retry works with Timeout and retries more than default.
+    """
+    consumer = DataHubEventsConsumer(
+        graph=mock_graph,
+        consumer_id="test-consumer",
+        offset_id="initial-offset",
+        infinite_retry=True,
+    )
+
+    # Fail 7 times, then succeed
+    call_count = 0
+
+    def side_effect(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count < 8:
+            raise Timeout("Request Timeout")
+        # Return a successful response on the 8th attempt
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "offsetId": "success-offset",
+            "count": 0,
+            "events": [],
+        }
+        mock_response.raise_for_status.return_value = None
+        return mock_response
+
+    with patch("requests.get", side_effect=side_effect) as mock_get:
+        result = consumer.poll_events(topic="TestTopic")
+
+        # Should have been called 8 times (7 failures + 1 success)
+        assert mock_get.call_count == 8
+        assert result.offsetId == "success-offset"
